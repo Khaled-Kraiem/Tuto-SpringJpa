@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,27 +15,29 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
 
-import com.tuto.spring.datajpa.message.ResponseFile;
 import com.tuto.spring.datajpa.message.ResponseMessage;
-import com.tuto.spring.datajpa.model.FileDB;
-import com.tuto.spring.datajpa.service.FileStorageService;
+import com.tuto.spring.datajpa.model.FileInfo;
+import com.tuto.spring.datajpa.service.FilesStorageService;
+
+
 
 @Controller
 @CrossOrigin("*")
-@RequestMapping("/api/db/")
-public class FileController {
+@RequestMapping("/api/local/")
+public class FilesController {
 
   @Autowired
-  private FileStorageService storageService;
+  FilesStorageService storageService;
 
   @PostMapping("/upload")
   public ResponseEntity<ResponseMessage> uploadFile(@RequestParam("file") MultipartFile file) {
     String message = "";
     try {
-      storageService.store(file);
+      storageService.save(file);
 
       message = "Uploaded the file successfully: " + file.getOriginalFilename();
       return ResponseEntity.status(HttpStatus.OK).body(new ResponseMessage(message));
@@ -45,30 +48,23 @@ public class FileController {
   }
 
   @GetMapping("/files")
-  public ResponseEntity<List<ResponseFile>> getListFiles() {
-    List<ResponseFile> files = storageService.getAllFiles().map(dbFile -> {
-      String fileDownloadUri = ServletUriComponentsBuilder
-          .fromCurrentContextPath()
-          .path("/files/")
-          .path(dbFile.getId())
-          .toUriString();
+  public ResponseEntity<List<FileInfo>> getListFiles() {
+    List<FileInfo> fileInfos = storageService.loadAll().map(path -> {
+      String filename = path.getFileName().toString();
+      String url = MvcUriComponentsBuilder
+          .fromMethodName(FilesController.class, "getFile", path.getFileName().toString()).build().toString();
 
-      return new ResponseFile(
-          dbFile.getName(),
-          fileDownloadUri,
-          dbFile.getType(),
-          dbFile.getData().length);
+      return new FileInfo(filename, url);
     }).collect(Collectors.toList());
 
-    return ResponseEntity.status(HttpStatus.OK).body(files);
+    return ResponseEntity.status(HttpStatus.OK).body(fileInfos);
   }
 
-  @GetMapping("/files/{id}")
-  public ResponseEntity<byte[]> getFile(@PathVariable String id) {
-    FileDB fileDB = storageService.getFile(id);
-
+  @GetMapping("/files/{filename:.+}")
+  @ResponseBody
+  public ResponseEntity<Resource> getFile(@PathVariable String filename) {
+    Resource file = storageService.load(filename);
     return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileDB.getName() + "\"")
-        .body(fileDB.getData());
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getFilename() + "\"").body(file);
   }
 }
